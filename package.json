@@ -1,0 +1,16 @@
+{
+  "name": "matrix-ai-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "marked": "^17.0.5",
+    "matrix-bot-sdk": "^0.7.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
