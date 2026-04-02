@@ -109,24 +109,66 @@ function pushToHistory(roomId, role, content) {
   if (history.length > MAX_HISTORY) history.splice(0, history.length - MAX_HISTORY);
 }
 
+// ─── Tool execution ─────────────────────────────────────────────────────────
+function executeToolCall(name, args, sender, roomId) {
+  switch (name) {
+    case "schedule_reminder": {
+      const reminder = scheduleReminder(
+        sender,
+        roomId,
+        args.message,
+        args.delay_seconds,
+        args.repeat_interval_seconds
+      );
+      return {
+        success: true,
+        reminder_id: reminder.id,
+        fire_at: new Date(reminder.fireAt).toISOString(),
+      };
+    }
+    case "list_reminders": {
+      const reminders = listReminders(sender, roomId);
+      return reminders.map((r) => ({
+        id: r.id,
+        message: r.message,
+        fire_at: new Date(r.fireAt).toISOString(),
+        recurring: r.repeatIntervalSeconds
+          ? `every ${r.repeatIntervalSeconds}s`
+          : null,
+      }));
+    }
+    case "cancel_reminder": {
+      const success = cancelReminder(sender, args.reminder_id);
+      return {
+        success,
+        message: success ? "Reminder cancelled." : "Reminder not found.",
+      };
+    }
+    default:
+      return { error: `Unknown tool: ${name}` };
+  }
+}
+
 // ─── AI call ─────────────────────────────────────────────────────────────────
-async function askAI(roomId, userMessage) {
+async function askAI(roomId, sender, userMessage) {
   pushToHistory(roomId, "user", userMessage);
 
   const base = AI_API_URL.endsWith("/") ? AI_API_URL : AI_API_URL + "/";
-  const response = await fetch(new URL("v1/chat/completions", base), {
+  const url = new URL("v1/chat/completions", base);
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${AI_API_KEY}`,
+  };
+
+  const messages = [
+    { role: "system", content: AI_SYSTEM_PROMPT + TOOL_INSTRUCTIONS },
+    ...getHistory(roomId),
+  ];
+
+  const response = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${AI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: AI_MODEL,
-      messages: [
-        { role: "system", content: AI_SYSTEM_PROMPT },
-        ...getHistory(roomId),
-      ],
-    }),
+    headers,
+    body: JSON.stringify({ model: AI_MODEL, messages, tools: TOOLS }),
   });
 
   if (!response.ok) {
@@ -135,8 +177,45 @@ async function askAI(roomId, userMessage) {
   }
 
   const data = await response.json();
-  const reply = data.choices[0].message.content;
+  const choice = data.choices[0];
 
+  if (choice.message.tool_calls && choice.message.tool_calls.length > 0) {
+    messages.push(choice.message);
+
+    for (const toolCall of choice.message.tool_calls) {
+      const args = JSON.parse(toolCall.function.arguments);
+      const result = executeToolCall(
+        toolCall.function.name,
+        args,
+        sender,
+        roomId
+      );
+      messages.push({
+        role: "tool",
+        tool_call_id: toolCall.id,
+        content: JSON.stringify(result),
+      });
+    }
+
+    // Follow-up call so the AI can craft a natural confirmation
+    const followUp = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ model: AI_MODEL, messages, tools: TOOLS }),
+    });
+
+    if (!followUp.ok) {
+      const err = await followUp.text();
+      throw new Error(`AI API error ${followUp.status}: ${err}`);
+    }
+
+    const followUpData = await followUp.json();
+    const reply = followUpData.choices[0].message.content;
+    pushToHistory(roomId, "assistant", reply);
+    return reply;
+  }
+
+  const reply = choice.message.content;
   pushToHistory(roomId, "assistant", reply);
   return reply;
 }
@@ -178,7 +257,7 @@ client.on("room.message", async (roomId, event) => {
   await client.setTyping(roomId, true, 10000);
 
   try {
-    const reply = await askAI(roomId, userMessage);
+    const reply = await askAI(roomId, event.sender, userMessage);
 
     await client.setTyping(roomId, false);
     await client.replyText(roomId, event, reply, marked(reply));
