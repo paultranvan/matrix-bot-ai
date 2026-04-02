@@ -1,8 +1,11 @@
 services:
   matrix-bot:
     build: .
-    restart: unless-stopped
+    restart: "no"
     env_file: .env
+    environment:
+      - TZ=Europe/Paris
+    command: ["npm", "run", "dev"]
     volumes:
       - ./data:/app/data
-      - ./prompt.txt:/app/prompt.txt:ro
+      - ./src:/app/src:ro
