@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Matrix AI bot — a single-file Node.js bot (`bot.js`) that bridges Matrix chat rooms to any OpenAI-compatible chat completions API. It responds in DMs and when mentioned in rooms, maintains per-room conversation history in memory, and sends typing indicators while waiting for the AI.
+Matrix AI bot — a Node.js bot that bridges Matrix chat rooms to any OpenAI-compatible chat completions API. It responds in DMs and when mentioned in rooms, maintains per-room conversation history in memory, sends typing indicators while waiting for the AI, and supports scheduling reminders via AI tool calling.
 
 Uses **matrix-bot-sdk** and native `fetch`. ESM (`"type": "module"`). No build step, no tests, no linter.
 
@@ -26,13 +26,23 @@ Uses **matrix-bot-sdk** and native `fetch`. ESM (`"type": "module"`). No build s
 
 ## Architecture
 
-Single file `bot.js` with these sections:
+Two files: `bot.js` (main) and `reminders.js` (reminder module).
+
+### `bot.js`
 - **Config** — reads env vars, exits on missing required ones
+- **Tool definitions** — `TOOLS` array and `TOOL_INSTRUCTIONS` for AI tool calling (schedule/list/cancel reminders)
 - **History** — in-memory per-room message history (`histories` map, capped at `MAX_HISTORY=20`)
-- **`askAI`** — calls `/chat/completions` with system prompt + room history
+- **`executeToolCall`** — dispatches AI tool calls to reminder functions
+- **`askAI`** — calls `/chat/completions` with system prompt + tools; handles tool-calling loop (execute tools, follow-up API call for confirmation)
 - **`shouldRespond`** — replies in DMs (2-member rooms) or when bot is mentioned
 - **`stripBotMention`** — removes bot user ID from message text
-- **Listener** — `room.message` handler: filters, calls AI, sends reply as a thread reply
-- **Startup** — `client.start()`, resolves `botUserId`
+- **Listener** — `room.message` handler: filters, calls AI, sends reply
+- **Startup** — `client.start()`, registers reminder fire callback, loads/schedules persisted reminders, notifies about missed reminders
 
-State is persisted to `./data/bot.json` via `SimpleFsStorageProvider` (Matrix SDK sync state only; conversation history is ephemeral).
+### `reminders.js`
+- **Persistence** — reads/writes `./data/reminders.json` (organized by sender)
+- **Scheduling** — `setTimeout`-based with overflow handling for >24.8 day delays; hourly scan for far-future reminders
+- **Public API** — `init(callback)`, `scheduleReminder()`, `listReminders()`, `cancelReminder()`, `loadAndProcessMissed()`
+- Supports one-shot and recurring reminders (`repeatIntervalSeconds`)
+
+State is persisted to `./data/bot.json` (Matrix SDK sync) and `./data/reminders.json` (reminder data). Conversation history is ephemeral.
