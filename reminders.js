@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 
 const REMINDERS_FILE = "./data/reminders.json";
 const MAX_TIMEOUT_MS = 2 ** 31 - 1; // ~24.8 days
@@ -22,6 +22,7 @@ function load() {
 }
 
 function save(data) {
+  mkdirSync("./data", { recursive: true });
   writeFileSync(REMINDERS_FILE, JSON.stringify(data, null, 2));
 }
 
