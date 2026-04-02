@@ -111,41 +111,45 @@ function pushToHistory(roomId, role, content) {
 
 // ─── Tool execution ─────────────────────────────────────────────────────────
 function executeToolCall(name, args, sender, roomId) {
-  switch (name) {
-    case "schedule_reminder": {
-      const reminder = scheduleReminder(
-        sender,
-        roomId,
-        args.message,
-        args.delay_seconds,
-        args.repeat_interval_seconds
-      );
-      return {
-        success: true,
-        reminder_id: reminder.id,
-        fire_at: new Date(reminder.fireAt).toISOString(),
-      };
+  try {
+    switch (name) {
+      case "schedule_reminder": {
+        const reminder = scheduleReminder(
+          sender,
+          roomId,
+          args.message,
+          args.delay_seconds,
+          args.repeat_interval_seconds
+        );
+        return {
+          success: true,
+          reminder_id: reminder.id,
+          fire_at: new Date(reminder.fireAt).toISOString(),
+        };
+      }
+      case "list_reminders": {
+        const reminders = listReminders(sender, roomId);
+        return reminders.map((r) => ({
+          id: r.id,
+          message: r.message,
+          fire_at: new Date(r.fireAt).toISOString(),
+          recurring: r.repeatIntervalSeconds
+            ? `every ${r.repeatIntervalSeconds}s`
+            : null,
+        }));
+      }
+      case "cancel_reminder": {
+        const success = cancelReminder(sender, args.reminder_id);
+        return {
+          success,
+          message: success ? "Reminder cancelled." : "Reminder not found.",
+        };
+      }
+      default:
+        return { error: `Unknown tool: ${name}` };
     }
-    case "list_reminders": {
-      const reminders = listReminders(sender, roomId);
-      return reminders.map((r) => ({
-        id: r.id,
-        message: r.message,
-        fire_at: new Date(r.fireAt).toISOString(),
-        recurring: r.repeatIntervalSeconds
-          ? `every ${r.repeatIntervalSeconds}s`
-          : null,
-      }));
-    }
-    case "cancel_reminder": {
-      const success = cancelReminder(sender, args.reminder_id);
-      return {
-        success,
-        message: success ? "Reminder cancelled." : "Reminder not found.",
-      };
-    }
-    default:
-      return { error: `Unknown tool: ${name}` };
+  } catch (err) {
+    return { success: false, error: err.message };
   }
 }
 
@@ -183,7 +187,17 @@ async function askAI(roomId, sender, userMessage) {
     messages.push(choice.message);
 
     for (const toolCall of choice.message.tool_calls) {
-      const args = JSON.parse(toolCall.function.arguments);
+      let args;
+      try {
+        args = JSON.parse(toolCall.function.arguments);
+      } catch {
+        messages.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: JSON.stringify({ error: "Invalid JSON arguments" }),
+        });
+        continue;
+      }
       const result = executeToolCall(
         toolCall.function.name,
         args,
@@ -210,7 +224,7 @@ async function askAI(roomId, sender, userMessage) {
     }
 
     const followUpData = await followUp.json();
-    const reply = followUpData.choices[0].message.content;
+    const reply = followUpData.choices[0].message.content || "";
     pushToHistory(roomId, "assistant", reply);
     return reply;
   }
