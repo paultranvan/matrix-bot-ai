@@ -174,21 +174,29 @@ async function askAI(roomId, sender, userMessage) {
     ...getHistory(roomId),
   ];
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ model: AI_MODEL, messages, tools: TOOLS }),
-  });
+  const MAX_TOOL_ROUNDS = 5;
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`AI API error ${response.status}: ${err}`);
-  }
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ model: AI_MODEL, messages, tools: TOOLS }),
+    });
 
-  const data = await response.json();
-  const choice = data.choices[0];
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`AI API error ${response.status}: ${err}`);
+    }
 
-  if (choice.message.tool_calls && choice.message.tool_calls.length > 0) {
+    const data = await response.json();
+    const choice = data.choices[0];
+
+    if (!choice.message.tool_calls || choice.message.tool_calls.length === 0) {
+      const reply = choice.message.content || "";
+      pushToHistory(roomId, "assistant", reply);
+      return reply;
+    }
+
     messages.push(choice.message);
 
     for (const toolCall of choice.message.tool_calls) {
@@ -215,26 +223,22 @@ async function askAI(roomId, sender, userMessage) {
         content: JSON.stringify(result),
       });
     }
-
-    // Follow-up call so the AI can craft a natural confirmation
-    const followUp = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ model: AI_MODEL, messages, tools: TOOLS }),
-    });
-
-    if (!followUp.ok) {
-      const err = await followUp.text();
-      throw new Error(`AI API error ${followUp.status}: ${err}`);
-    }
-
-    const followUpData = await followUp.json();
-    const reply = followUpData.choices[0].message.content || "";
-    pushToHistory(roomId, "assistant", reply);
-    return reply;
   }
 
-  const reply = choice.message.content;
+  // Exhausted rounds — force a text reply without tools
+  const finalResponse = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ model: AI_MODEL, messages }),
+  });
+
+  if (!finalResponse.ok) {
+    const err = await finalResponse.text();
+    throw new Error(`AI API error ${finalResponse.status}: ${err}`);
+  }
+
+  const finalData = await finalResponse.json();
+  const reply = finalData.choices[0].message.content || "";
   pushToHistory(roomId, "assistant", reply);
   return reply;
 }
