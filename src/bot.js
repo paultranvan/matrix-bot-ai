@@ -22,10 +22,14 @@ const MATRIX_ACCESS_TOKEN  = process.env.MATRIX_ACCESS_TOKEN;
 const AI_API_URL           = process.env.AI_API_URL;
 const AI_API_KEY           = process.env.AI_API_KEY || "none";
 const AI_MODEL             = process.env.AI_MODEL || "gpt-4o";
-const AI_SYSTEM_PROMPT     = readFileSync("./prompt.txt", "utf-8").trim();
+const AI_SYSTEM_PROMPT     = readFileSync(new URL("./prompt.txt", import.meta.url), "utf-8").trim();
 
-const TOOL_INSTRUCTIONS = `
-You can schedule reminders for the user. When they ask to be reminded of something, use the schedule_reminder tool. Convert relative times ("in 30 minutes", "in 2 hours", "tomorrow at 9am") into a number of seconds from now. When they ask to see or cancel reminders, use list_reminders and cancel_reminder.`;
+function getToolInstructions() {
+  const now = new Date().toLocaleString("fr-FR", { timeZone: "Europe/Paris" });
+  return `
+You can schedule reminders for the user. When they ask to be reminded of something, use the schedule_reminder tool. Convert times into a number of seconds from now. The current date/time is ${now} (Europe/Paris). Unless the user specifies a timezone, always assume Europe/Paris. When they ask to see or cancel reminders, use list_reminders and cancel_reminder.
+After scheduling a reminder, only confirm that it was scheduled (e.g. "Done, I'll remind you in 10 seconds."). Do NOT perform the reminder action yourself in the confirmation — the reminder system will deliver the message automatically when the time comes.`;
+}
 
 const TOOLS = [
   {
@@ -93,6 +97,7 @@ const client  = new MatrixClient(MATRIX_HOMESERVER, MATRIX_ACCESS_TOKEN, storage
 AutojoinRoomsMixin.setupOnClient(client);
 
 let botUserId = null;
+let startupTimestamp = null;
 
 // ─── History ─────────────────────────────────────────────────────────────────
 const histories = {};
@@ -165,7 +170,7 @@ async function askAI(roomId, sender, userMessage) {
   };
 
   const messages = [
-    { role: "system", content: AI_SYSTEM_PROMPT + TOOL_INSTRUCTIONS },
+    { role: "system", content: AI_SYSTEM_PROMPT + getToolInstructions() },
     ...getHistory(roomId),
   ];
 
@@ -261,6 +266,7 @@ function stripBotMention(text) {
 client.on("room.message", async (roomId, event) => {
   if (event.sender === botUserId) return;
   if (!event.content || event.content.msgtype !== "m.text") return;
+  if (event.origin_server_ts < startupTimestamp) return;
 
   if (!await shouldRespond(roomId, event)) return;
 
@@ -294,6 +300,7 @@ function escapeHtml(s) {
 // ─── Startup ─────────────────────────────────────────────────────────────────
 client.start().then(async () => {
   botUserId = await client.getUserId();
+  startupTimestamp = Date.now();
   console.log(`✅ Bot started: ${botUserId}`);
   console.log(`🔗 AI: ${AI_API_URL} (model: ${AI_MODEL})`);
 

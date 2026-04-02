@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node bot.js"
+    "start": "node src/bot.js",
+    "dev": "node --watch src/bot.js"
   },
   "dependencies": {
     "dotenv": "^17.3.1",
