@@ -287,6 +287,10 @@ client.on("room.message", async (roomId, event) => {
   }
 });
 
+function escapeHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 // ─── Startup ─────────────────────────────────────────────────────────────────
 client.start().then(async () => {
   botUserId = await client.getUserId();
@@ -296,7 +300,7 @@ client.start().then(async () => {
   // Fire callback: send reminder message to the room
   initReminders((sender, reminder) => {
     const body = `${sender} Reminder: ${reminder.message}`;
-    const html = `<a href="https://matrix.to/#/${sender}">${sender}</a> Reminder: ${reminder.message}`;
+    const html = `<a href="https://matrix.to/#/${sender}">${sender}</a> Reminder: ${escapeHtml(reminder.message)}`;
     client
       .sendMessage(reminder.roomId, {
         msgtype: "m.text",
@@ -322,7 +326,7 @@ client.start().then(async () => {
       );
       const text = `Sorry for the inconvenience -- I was offline and missed some reminders: ${parts.join(", ")}`;
       const body = `${sender} ${text}`;
-      const html = `<a href="https://matrix.to/#/${sender}">${sender}</a> ${text}`;
+      const html = `<a href="https://matrix.to/#/${sender}">${sender}</a> ${escapeHtml(text)}`;
       await client
         .sendMessage(roomId, {
           msgtype: "m.text",
