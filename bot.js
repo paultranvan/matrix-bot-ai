@@ -1,4 +1,11 @@
 import "dotenv/config";
+import {
+  init as initReminders,
+  scheduleReminder,
+  listReminders,
+  cancelReminder,
+  loadAndProcessMissed,
+} from "./reminders.js";
 import { readFileSync } from "fs";
 import { marked } from "marked";
 import {
@@ -16,6 +23,62 @@ const AI_API_URL           = process.env.AI_API_URL;
 const AI_API_KEY           = process.env.AI_API_KEY || "none";
 const AI_MODEL             = process.env.AI_MODEL || "gpt-4o";
 const AI_SYSTEM_PROMPT     = readFileSync("./prompt.txt", "utf-8").trim();
+
+const TOOL_INSTRUCTIONS = `
+You can schedule reminders for the user. When they ask to be reminded of something, use the schedule_reminder tool. Convert relative times ("in 30 minutes", "in 2 hours", "tomorrow at 9am") into a number of seconds from now. When they ask to see or cancel reminders, use list_reminders and cancel_reminder.`;
+
+const TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "schedule_reminder",
+      description: "Schedule a reminder for the user.",
+      parameters: {
+        type: "object",
+        properties: {
+          delay_seconds: {
+            type: "integer",
+            description: "Number of seconds from now until the reminder fires",
+          },
+          message: {
+            type: "string",
+            description: "What to remind the user about",
+          },
+          repeat_interval_seconds: {
+            type: "integer",
+            description: "If set, the reminder recurs at this interval in seconds",
+          },
+        },
+        required: ["delay_seconds", "message"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_reminders",
+      description: "List the user's active reminders in the current room.",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "cancel_reminder",
+      description: "Cancel a pending reminder by its ID.",
+      parameters: {
+        type: "object",
+        properties: {
+          reminder_id: {
+            type: "string",
+            description: "The ID of the reminder to cancel",
+          },
+        },
+        required: ["reminder_id"],
+      },
+    },
+  },
+];
 // ──────────────────────────────────────────────────────────────────────────────
 
 if (!MATRIX_HOMESERVER || !MATRIX_ACCESS_TOKEN || !AI_API_URL) {
