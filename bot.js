@@ -278,6 +278,54 @@ client.start().then(async () => {
   botUserId = await client.getUserId();
   console.log(`✅ Bot started: ${botUserId}`);
   console.log(`🔗 AI: ${AI_API_URL} (model: ${AI_MODEL})`);
+
+  // Fire callback: send reminder message to the room
+  initReminders((sender, reminder) => {
+    const body = `${sender} Reminder: ${reminder.message}`;
+    const html = `<a href="https://matrix.to/#/${sender}">${sender}</a> Reminder: ${reminder.message}`;
+    client
+      .sendMessage(reminder.roomId, {
+        msgtype: "m.text",
+        body,
+        format: "org.matrix.custom.html",
+        formatted_body: html,
+      })
+      .catch((err) => {
+        console.error(
+          `❌ Failed to send reminder to ${reminder.roomId}:`,
+          err.message
+        );
+      });
+  });
+
+  // Load reminders and notify about missed ones
+  const missed = loadAndProcessMissed();
+
+  for (const [sender, rooms] of Object.entries(missed)) {
+    for (const [roomId, reminders] of Object.entries(rooms)) {
+      const parts = reminders.map((r) =>
+        r.count > 1 ? `${r.message} (x${r.count})` : r.message
+      );
+      const text = `Sorry for the inconvenience -- I was offline and missed some reminders: ${parts.join(", ")}`;
+      const body = `${sender} ${text}`;
+      const html = `<a href="https://matrix.to/#/${sender}">${sender}</a> ${text}`;
+      await client
+        .sendMessage(roomId, {
+          msgtype: "m.text",
+          body,
+          format: "org.matrix.custom.html",
+          formatted_body: html,
+        })
+        .catch((err) => {
+          console.error(
+            `❌ Failed to send missed reminder notice to ${roomId}:`,
+            err.message
+          );
+        });
+    }
+  }
+
+  console.log(`⏰ Reminders loaded`);
 }).catch((err) => {
   console.error("❌ Failed to start bot:", err);
   process.exit(1);
