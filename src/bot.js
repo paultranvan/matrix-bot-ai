@@ -29,7 +29,8 @@ function getToolInstructions() {
   return `
 You can schedule reminders for the user. When they ask to be reminded of something, use the schedule_reminder tool. Convert times into a number of seconds from now. The current date/time is ${now} (Europe/Paris). Unless the user specifies a timezone, always assume Europe/Paris. When they ask to see or cancel reminders, use list_reminders and cancel_reminder.
 After scheduling a reminder, only confirm that it was scheduled (e.g. "All right, I'll remind you in 10 seconds."). Do NOT perform the reminder action yourself in the confirmation — the reminder system will deliver the message automatically when the time comes.
-Always respond in the same language the user used, even after executing tools.`;
+Always respond in the same language the user used, even after executing tools.
+After receiving tool results, reply directly to the user with the information. Do not narrate what you are doing or explain your reasoning.`;
 }
 
 const TOOLS = [
