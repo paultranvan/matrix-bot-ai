@@ -201,8 +201,13 @@ async function askAI(roomId, sender, userMessage) {
       return reply;
     }
 
-    // Continue with tools
-    messages.push(choice.message);
+    // Continue with tools — keep only the fields the API needs,
+    // and force content to "" so backends that choke on null are safe.
+    messages.push({
+      role: "assistant",
+      content: "",
+      tool_calls: choice.message.tool_calls,
+    });
 
     for (const toolCall of choice.message.tool_calls) {
       let args;
