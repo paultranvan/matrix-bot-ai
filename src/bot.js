@@ -22,7 +22,18 @@ const MATRIX_ACCESS_TOKEN  = process.env.MATRIX_ACCESS_TOKEN;
 const AI_API_URL           = process.env.AI_API_URL;
 const AI_API_KEY           = process.env.AI_API_KEY || "none";
 const AI_MODEL             = process.env.AI_MODEL || "gpt-4o";
-const AI_SYSTEM_PROMPT     = readFileSync(new URL("./prompt.txt", import.meta.url), "utf-8").trim();
+const AI_SYSTEM_PROMPT_FILE = process.env.AI_SYSTEM_PROMPT_FILE;
+const AI_SYSTEM_PROMPT = (() => {
+  const path = AI_SYSTEM_PROMPT_FILE ?? new URL("./prompt-default.txt", import.meta.url);
+  try {
+    return readFileSync(path, "utf-8").trim();
+  } catch (err) {
+    if (AI_SYSTEM_PROMPT_FILE && err.code === "ENOENT") {
+      throw new Error(`AI_SYSTEM_PROMPT_FILE points to a missing file: ${AI_SYSTEM_PROMPT_FILE}`);
+    }
+    throw err;
+  }
+})();
 
 function getToolInstructions() {
   const now = new Date().toLocaleString("fr-FR", { timeZone: "Europe/Paris" });
